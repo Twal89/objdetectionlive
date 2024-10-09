@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Détection d'objets - Mobile</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #e6f2ff;
+            color: #333;
+            margin: 0;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+        }
+        h1 {
+            color: #0066cc;
+            font-size: 1.5em;
+            margin-bottom: 10px;
+        }
+        #videoContainer {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            margin-top: 10px;
+        }
+        #video, #canvas {
+            width: 100%;
+            height: auto;
+            max-height: 70vh;
+            object-fit: contain;
+        }
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #status {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #cce6ff;
+            border-radius: 5px;
+            text-align: center;
+            width: 100%;
+            max-width: 640px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Détection d'objets en temps réel</h1>
+    <div id="videoContainer">
+        <video id="video" playsinline autoplay></video>
+        <canvas id="canvas"></canvas>
+    </div>
+    <div id="status">En attente de la caméra...</div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const status = document.getElementById('status');
+
+        let model;
+
+        async function setupCamera() {
+            const constraints = {
+                video: {
+                    facingMode: 'environment',
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            };
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                return new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        resolve(video);
+                    };
+                });
+            } catch (error) {
+                status.textContent = "Erreur d'accès à la caméra: " + error.message;
+                throw error;
+            }
+        }
+
+        async function loadModel() {
+            try {
+                status.textContent = 'Chargement du modèle COCO-SSD...';
+                model = await cocoSsd.load();
+                status.textContent = 'Modèle chargé, détection en cours...';
+            } catch (error) {
+                status.textContent = "Erreur de chargement du modèle: " + error.message;
+                throw error;
+            }
+        }
+
+        function updateCanvasSize() {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+        }
+
+        async function detectObjects() {
+            updateCanvasSize();
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const predictions = await model.detect(canvas);
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            predictions.forEach(prediction => {
+                const [x, y, width, height] = prediction.bbox;
+                ctx.strokeStyle = '#00FFFF';
+                ctx.lineWidth = 4;
+                ctx.strokeRect(x, y, width, height);
+                
+                ctx.fillStyle = '#00FFFF';
+                ctx.font = 'bold 16px sans-serif';
+                const label = `${prediction.class} (${Math.round(prediction.score * 100)}%)`;
+                const textWidth = ctx.measureText(label).width;
+                ctx.fillRect(x, y > 20 ? y - 20 : y, textWidth + 10, 20);
+                ctx.fillStyle = '#000000';
+                ctx.fillText(label, x + 5, y > 20 ? y - 5 : y + 15);
+            });
+        }
+
+        async function run() {
+            await setupCamera();
+            video.play();
+            await loadModel();
+            setInterval(detectObjects, 1000 / 3); // 3 FPS
+        }
+
+        run().catch(error => {
+            console.error(error);
+            status.textContent = "Une erreur est survenue. Veuillez recharger la page.";
+        });
+    </script>
+</body>
+</html>
